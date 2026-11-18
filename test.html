@@ -22,13 +22,70 @@
         border: 0;
       }
     </style>
+    <script>
+      /**
+       * 从当前页面 URL 的 query 读取 x-tt-env，透传到 iframe 地址。
+       * 兼容 x-tt-env / x_tt_env 以及大小写混写（URLSearchParams 的 key 区分大小写）。
+       */
+      (function () {
+        var ENV_KEYS = ['x-tt-env', 'x_tt_env'];
+
+        function readEnvFromQuery() {
+          try {
+            var params = new URLSearchParams(window.location.search || '');
+            var env = '';
+            params.forEach(function (value, key) {
+              if (env) return;
+              if (ENV_KEYS.indexOf(String(key).toLowerCase()) !== -1 && value) {
+                env = String(value).trim();
+              }
+            });
+            return env;
+          } catch (error) {
+            console.warn('[iframe-preview] 读取 x-tt-env 失败:', error);
+            return '';
+          }
+        }
+
+        function withEnvParam(baseUrl, env) {
+          if (!env) return baseUrl;
+          // hash 段不参与 query 拼接，避免把参数拼到 # 之后。
+          var hash = '';
+          var hashIndex = baseUrl.indexOf('#');
+          if (hashIndex !== -1) {
+            hash = baseUrl.slice(hashIndex);
+            baseUrl = baseUrl.slice(0, hashIndex);
+          }
+          var separator = baseUrl.indexOf('?') !== -1 ? '&' : '?';
+          return baseUrl + separator + 'x-tt-env=' + encodeURIComponent(env) + hash;
+        }
+
+        function mount() {
+          var frame = document.getElementById('frame');
+          if (!frame) return;
+          var baseUrl = frame.getAttribute('data-src');
+          if (!baseUrl) return;
+          var env = readEnvFromQuery();
+          if (!env) {
+            console.warn('[iframe-preview] 当前 URL 未携带 x-tt-env，按默认环境加载');
+          }
+          frame.src = withEnvParam(baseUrl, env);
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', mount);
+        } else {
+          mount();
+        }
+      })();
+    </script>
   </head>
 
   <body>
     <iframe
       id="frame"
       title="绑卡活动"
-      src="https://stock.yihexingyao.com/obj/fae-static/cj/fe/h5/caijing_h5_fund_stocks/bindCardLanding"
+      data-src="https://stock.yihexingyao.com/obj/fae-static/cj/fe/h5/caijing_h5_fund_stocks/openAccountFlowDemo"
       allow="clipboard-write"
       referrerpolicy="no-referrer-when-downgrade"
     ></iframe>

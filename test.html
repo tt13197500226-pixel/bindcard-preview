@@ -21,6 +21,55 @@
         height: 100%;
         border: 0;
       }
+
+      #configPanel {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        max-height: 45vh;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(22, 24, 35, 0.88);
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+        z-index: 9999;
+      }
+
+      #configHeader {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      #configHeader button {
+        padding: 5px 12px;
+        border: 0;
+        border-radius: 999px;
+        background: #ff5b4e;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      #configHeader button:disabled {
+        opacity: 0.6;
+      }
+
+      #configResult {
+        margin: 0;
+        overflow: auto;
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: rgba(255, 255, 255, 0.82);
+      }
     </style>
     <script>
       /**
@@ -78,6 +127,105 @@
           mount();
         }
       })();
+
+      /**
+       * 请求门户 query-config 接口，拉取 TCC 配置原文。
+       * 与仓库内 portalService.QueryConfig 的入参口径一致：只传 configKey。
+       */
+      (function () {
+        var QUERY_CONFIG_URL =
+          'https://stock.yihexingyao.com/wealth-api/stock-portal/query-config';
+        var CONFIG_KEY = 'wealth_protocol_consent_config';
+
+        function prettyPrint(value) {
+          try {
+            return JSON.stringify(value, null, 2);
+          } catch (error) {
+            return String(value);
+          }
+        }
+
+        function render(state, statusText, body) {
+          var panel = document.getElementById('configResult');
+          if (!panel) return;
+          panel.textContent =
+            '接口：' + QUERY_CONFIG_URL +
+            '\nconfigKey：' + CONFIG_KEY +
+            '\n状态：' + statusText +
+            (state ? '\n耗时：' + state.latency + 'ms' : '') +
+            '\n\n' + (body === undefined ? '' : body);
+        }
+
+        function setLoading(loading) {
+          var button = document.getElementById('configReload');
+          if (!button) return;
+          button.disabled = loading;
+          button.textContent = loading ? '请求中…' : '重新请求';
+        }
+
+        function queryConfig() {
+          var startTime = Date.now();
+          setLoading(true);
+          render(null, '请求中…');
+
+          return fetch(QUERY_CONFIG_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              // 与 AGW 中间件 addAGWHeader 保持一致，让网关按字符串返回
+              'Agw-Js-Conv': 'str',
+            },
+            // query-config 需要登录态，预览页与接口同域，带上 Cookie
+            credentials: 'include',
+            body: JSON.stringify({ configKey: CONFIG_KEY }),
+          })
+            .then(function (response) {
+              return response.text().then(function (text) {
+                var latency = Date.now() - startTime;
+                var body = text;
+                try {
+                  body = prettyPrint(JSON.parse(text));
+                } catch (error) {
+                  // 非 JSON 就原样展示
+                }
+                render(
+                  { latency: latency },
+                  response.status + ' ' + response.statusText,
+                  body
+                );
+                return text;
+              });
+            })
+            .catch(function (error) {
+              var latency = Date.now() - startTime;
+              console.error('[query-config] 请求失败:', error);
+              render(
+                { latency: latency },
+                '请求失败',
+                (error && error.message) || String(error)
+              );
+            })
+            .then(function () {
+              setLoading(false);
+            });
+        }
+
+        function bootstrap() {
+          var button = document.getElementById('configReload');
+          if (button) {
+            button.addEventListener('click', function () {
+              queryConfig();
+            });
+          }
+          queryConfig();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', bootstrap);
+        } else {
+          bootstrap();
+        }
+      })();
     </script>
   </head>
 
@@ -89,5 +237,13 @@
       allow="clipboard-write"
       referrerpolicy="no-referrer-when-downgrade"
     ></iframe>
+
+    <div id="configPanel">
+      <div id="configHeader">
+        <span>query-config · wealth_protocol_consent_config</span>
+        <button id="configReload" type="button">重新请求</button>
+      </div>
+      <pre id="configResult">等待请求…</pre>
+    </div>
   </body>
 </html>
